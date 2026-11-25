@@ -1035,6 +1035,16 @@ let bestUnit=0;   // この冒険で届いたいちばん大きい単位
 const poke={at:-9e9,line:''};
 const hudRec={v:0,at:-9};
 let ghost=null, best=null, ghostT=0, rec=[], recT=0;
+// 最後の競争(若き日の自分)で負けるたびに、画面には出さずに少しずつやさしくする。勝ったら元にもどす。
+// 0=1回目 1=2回目 2=3回目 3=4回目以降(ぜったいに負けない: 若き日の自分はゴール手前で止まり、パワー切れもしない)
+let bossLose=0;
+const BOSS_EASY=[{g:1,drain:1},{g:0.85,drain:0.8},{g:0.72,drain:0.6},{g:0.6,drain:0.4}];
+const bossK=()=>Math.min(3,bossLose);
+function bossFail(){ if(def&&def.f&&def.f.boss&&!SIM) bossLose++; }
+function ghostMul(){ let m=BOSS_EASY[bossK()].g; if(bossK()<3||!ghost||!lv) return m;
+  const fr=ghost.frames[Math.min(ghost.frames.length-1,Math.floor(ghostT*30))]; if(!fr) return m;
+  const gp=(ST.y0-fr[1])/Math.max(1,ST.y0-lv.goal.y);
+  return gp>stageProg()+0.08?m*0.4:m; }   // 4回目: プレイヤーより先に行きすぎたら、さらにゆっくり
 try{ const b=JSON.parse(localStorage.getItem('mc_ghost')||'null'); if(b&&b.frames) best=b; }catch(_){}
 const stars=[]; for(let i=0;i<60;i++) stars.push({x:Math.random()*VW,y:Math.random()*1400,s:Math.random()<.2?2:1,p:Math.random()*6});
 const tier=()=>TIERS[stageIdx]||1;
@@ -1522,16 +1532,18 @@ function stepPlay(dt){
   const b=bandOf(P.y+P.h), sauna=lv.sauna[b];
   let drain=def.drain*(1+Math.min(1,P.pump*0.03))*(sauna?2:1)*(inWater?0:1)*(P.protein>0?0:1)*(el?0:1);
   if(G.inv||P.konjo>0) drain=0;
+  if(def.f.boss) drain*=BOSS_EASY[bossK()].drain;
   P.hp-=drain*dt;
+  if(def.f.boss&&bossK()>=3&&P.hp<1) P.hp=1;   // 4回目: パワー切れで負けることもない
   if(P.protein>0) P.protein=Math.max(0,P.protein-dt);
   if(P.pump>0&&((P.hp<=12&&P.ground)||P.hp<=2)){ startRush(null,'auto'); return; }
   if(P.hp<30&&!G.inv){ lowBeep-=dt; if(lowBeep<=0){sfx.low(); lowBeep=P.hp<15?0.4:0.8;} if(!P.saidLow&&P.hp<22){ P.saidLow=true; V('low',2); } }
   else if(P.hp>50) P.saidLow=false;
   if(P.hp<=0){
     P.hp=0;
-    if(P.konjo>0){ P.konjo-=dt; if(P.konjo<=0){ state='over'; stT=0; autoT=0; sfx.over(); return; } }
+    if(P.konjo>0){ P.konjo-=dt; if(P.konjo<=0){ state='over'; bossFail(); stT=0; autoT=0; sfx.over(); return; } }
     else if(!P.konjoUsed){ P.konjoUsed=true; P.konjo=3; cutin('まだだ…まだ終わらんッ!','face',true); V('konjo',5); }
-    else { state='over'; stT=0; autoT=0; sfx.over(); return; }
+    else { state='over'; bossFail(); stT=0; autoT=0; sfx.over(); return; }
   }
   const gl=lv.goal;
   if(P.x<gl.x+gl.w&&P.x+P.w>gl.x&&P.y<gl.y+gl.h&&P.y+P.h>gl.y) reachGoal();
@@ -1552,6 +1564,7 @@ function startWarp(){ const g=lv.goal; state='warp'; P.vx=0; P.vy=0;
 function finishGoal(){
   totalTime+=stageTime; sfx.goal(); giveSticker('s'+(stageIdx+1));
   if(def.f.boss) V('bosswin',6); else Vr(['goal','clear1','clear2'],5);
+  if(def.f.boss) bossLose=0;
   if(def.f.boss&&!G.auto&&rec.length){ const tm=stageTime; if(!best||tm<best.time){ best={frames:rec.slice(),rate:1,time:tm}; try{localStorage.setItem('mc_ghost',JSON.stringify(best));}catch(_){} } }
   if(tier()>=5){ state='goalSlow'; FX.slow=1.2; stT=0; spawnConf(100); for(let i=0;i<3;i++) spawnFW(40+R01()*(UW-80),UH*.15+R01()*UH*.35); cutin('登頂ォォッ!!','pose',true); }
   else { state='clear'; stT=0; autoT=0; }
@@ -1688,8 +1701,9 @@ function update(dt){
       if(!cheer.near&&bb>=lv.nb-3){ cheer.near=cheer.half=true; cutin('あと すこし!','pose'); S('yeah',0.55); V('near',2,0.3); }
       else if(!cheer.half&&bb>=Math.floor(lv.nb/2)){ cheer.half=true; cutin('はんぶん きたよ!','pose'); S('cheer',0.4); V('half',2,0.3); } }
     if(def.f.boss&&ghost&&(state==='play'||state==='rush')){
-      ghostT+=dt*ghost.rate; recT+=dt; if(recT>=1/30){ recT-=1/30; rec.push([Math.round(P.x),Math.round(P.y),P.face,P.ground?1:0]); }
-      if(Math.floor(ghostT*30)>=ghost.frames.length-1){ state='lose'; rush=null; FX.zoom=1; stT=0; autoT=0; sfx.over(); }
+      ghostT+=dt*ghost.rate*ghostMul(); recT+=dt; if(recT>=1/30){ recT-=1/30; rec.push([Math.round(P.x),Math.round(P.y),P.face,P.ground?1:0]); }
+      if(bossK()>=3) ghostT=Math.min(ghostT,(ghost.frames.length-3)/30);   // 4回目: 若き日の自分はゴールの手前まで(ぜったい先を越されない)
+      if(Math.floor(ghostT*30)>=ghost.frames.length-1){ state='lose'; bossFail(); rush=null; FX.zoom=1; stT=0; autoT=0; sfx.over(); }
     }
     camY+=(clampCam(P.y+P.h/2-VH*0.6)-camY)*Math.min(1,dt*8);
     camX+=(clampCamX(P.x+P.w/2-VW/2+P.face*14)-camX)*Math.min(1,dt*6);
@@ -2390,6 +2404,11 @@ window.__mc={
   bonusGo(auto=true){ G.auto=auto; G.speed=1; startBonus(); hideMenu(); },
   go(i,auto=true,sp=1){ G.auto=auto; G.speed=sp; totalTime=0; startStage(i); },
   speed(sp){ G.speed=sp; },
+  // 最後の競争の救済: k回負けたあと、なにもしない(へたくそ最悪の)プレイヤーでも負けないか。{res, ghostEnd:若き日の自分がゴールまであと何コマか}
+  bossEasy(k,maxT=240){ const sv=bossLose; SIM=true; G.auto=false; bossLose=k; const i=STAGES.findIndex(s=>s.f&&s.f.boss); ghost=genGhost(i); startStageCore(i);
+    let t=0, res='play'; while(t<maxT){ update(1/60); t+=1/60; if(state!=='play'&&state!=='rush'){ res=state; break; } }
+    const out={k,res,time:+t.toFixed(1),hp:+P.hp.toFixed(1),ghostEnd:ghost.frames.length-1-Math.floor(ghostT*30)}; SIM=false; bossLose=sv; state='title'; return out; },
+  bossLose(n){ if(n!==undefined) bossLose=n; return bossLose; },
   audio:()=>({ac:AC?AC.state:null,se:Object.keys(AS.buf).filter(k=>k.startsWith('se:')).length,seRaw:Object.keys(AS.raw).filter(k=>k.startsWith('se:')).length,
     bgm:Object.keys(AS.buf).filter(k=>k.startsWith('bgm:')),bgmRaw:Object.keys(AS.raw).filter(k=>k.startsWith('bgm:')&&AS.raw[k]),playing:MUS.src?MUS.src.id:null,synth:!!MUS.song,
     loop:MUS.src?[+MUS.src.s.loopStart.toFixed(3),+MUS.src.s.loopEnd.toFixed(3)]:null}),
