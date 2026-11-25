@@ -762,7 +762,8 @@ document.addEventListener('gesturestart',e=>e.preventDefault());
 // =====================================================================
 let AC=null, SIM=false, MASTER=null, COMP=null, VG=null, VOBUS=null, NOISE=null, DCURVE=null;
 // 音量(0〜1、0.1刻み)。ふつう=0.8。mc_vol に保存。m=ぜんたい b=きょく s=こうかおん v=こえ
-const VOL={m:0.8,b:0.8,s:0.8,v:0.8};
+// ぜんたいの最初の値は 2(スマホで大きすぎたため。2026-11-25 ユーザー指定)
+const VOL={m:0.2,b:0.8,s:0.8,v:0.8};
 try{ const v=JSON.parse(localStorage.getItem('mc_vol')||'null'); if(v) Object.assign(VOL,v); else if(localStorage.getItem('mc_bgm')==='0') VOL.b=0; }catch(_){}
 const volK=v=>Math.pow(v/0.8,2);   // 耳の感じ方に合わせて2乗(0.8で今までと同じ大きさ)
 function volSave(){ try{ localStorage.setItem('mc_vol',JSON.stringify(VOL)); }catch(_){} }
